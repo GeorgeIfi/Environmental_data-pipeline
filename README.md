@@ -1,11 +1,21 @@
-## Environmental Data Engineering Pipeline (Azure-centric)
+# Environmental Data Engineering Pipeline (Azure-centric)
+
 ## Overview
 
-This project implements an end-to-end data engineering pipeline for ingesting, transforming, validating, and preparing environmental data for analytics and downstream consumption. It is designed using cloud-native data engineering principles, with Azure as the target platform, while remaining runnable locally for development and CI/CD.
+This project implements an end-to-end **environmental data engineering pipeline** designed using cloud-native and production-grade data engineering principles. While Azure is the primary target platform, the pipeline is fully runnable **locally and in CI**, making it suitable for development, testing, and portfolio demonstration.
 
-The pipeline follows a layered medallion architecture (Raw → Bronze → Silver → Gold) and emphasizes infrastructure as code, data quality enforcement, and reproducible environments.
+The pipeline follows the **medallion architecture** (Raw → Bronze → Silver → Gold) and emphasizes:
+
+- Infrastructure as Code (IaC)
+- Parameterised, config-driven execution
+- Strong data quality enforcement
+- CI-safe, reproducible workflows
+
+---
 
 ## Architecture
+
+```
 ┌──────────┐
 │  Source  │  (CSV / External data)
 └────┬─────┘
@@ -16,42 +26,46 @@ The pipeline follows a layered medallion architecture (Raw → Bronze → Silver
 └────┬─────┘
      ▼
 ┌──────────┐
-│  Bronze  │  Basic cleaning & standardization
+│  Bronze  │  Standardisation & basic cleaning
 └────┬─────┘
      ▼
 ┌──────────┐
-│  Silver  │  Validated, enriched, analytics-ready
+│  Silver  │  Validated, enriched datasets
 └────┬─────┘
      ▼
 ┌──────────┐
-│   Gold   │  Curated outputs (KPIs / reporting)
+│   Gold   │  Curated aggregates for analytics
 └──────────┘
+```
 
-## Cloud mapping (Azure-oriented):
+---
 
-Raw / Bronze / Silver / Gold → Azure Data Lake Storage Gen2 containers
+## Cloud Mapping (Azure-oriented)
 
-Orchestration → Apache Airflow
+| Pipeline Layer | Azure Service |
+|---------------|--------------|
+| Raw / Bronze / Silver / Gold | Azure Data Lake Storage Gen2 |
+| Orchestration | Apache Airflow |
+| Infrastructure | Terraform |
+| CI | GitHub Actions |
 
-Infrastructure → Terraform
-
-CI/CD → GitHub Actions
+---
 
 ## Tech Stack
 
-Python 3.11
+- Python 3.11
+- Pandas
+- Pytest
+- Apache Airflow
+- Terraform (Azure)
+- Azure Data Lake Storage Gen2
+- GitHub Actions
 
-Apache Airflow (orchestration)
-
-Terraform (Azure infrastructure as code)
-
-Azure Data Lake Storage Gen2
-
-Pandas / Pytest (transformations & quality checks)
-
-GitHub Actions (CI pipeline)
+---
 
 ## Repository Structure
+
+```
 .
 ├── infra/
 │   └── terraform/
@@ -70,104 +84,125 @@ GitHub Actions (CI pipeline)
 │   ├── quality/
 │   │   └── data_quality_checks.py
 │   └── utils/
-│       └── azure_storage.py
+│       ├── azure_storage.py
+│       └── synapse_client.py
 │
-├── data/
-│   ├── raw/        # ignored (runtime only)
-│   ├── bronze/     # ignored
-│   ├── silver/     # ignored
-│   └── gold/       # ignored
+├── data/              # runtime-only, ignored by Git
+│   ├── raw/
+│   ├── bronze/
+│   ├── silver/
+│   └── gold/
 │
 ├── tests/
+│   ├── test_ingestion.py
 │   └── test_quality.py
 │
 ├── run_pipeline.py
 ├── requirements.txt
 ├── .gitignore
+├── .env.example
 └── README.md
+```
+
+---
 
 ## Data Quality & Validation
 
-Data quality is treated as a first-class concern, not an afterthought.
+Data quality is treated as a **first-class concern**.
 
 Implemented checks include:
 
-Null / completeness checks
-
-Schema validation
-
-Basic value sanity checks (ranges, formats)
+- Null and completeness validation
+- Required column enforcement
+- Date parsing validation
+- Aggregation sanity checks
 
 Quality checks are:
 
-Executed during transformation stages
+- Embedded within transformation stages
+- Enforced via `pytest` in CI
+- Designed to **fail fast** to prevent downstream data corruption
 
-Enforced in CI using pytest
-
-Designed to fail fast to prevent bad data propagation downstream
-
-## Infrastructure as Code (Terraform)
-
-All cloud resources are defined declaratively using Terraform, including:
-
-Azure storage resources
-
-Supporting data platform components
-
-Key principles:
-
-No state or secrets committed to Git
-
-Environment-specific values handled via variables
-
-Reproducible deployments
+---
 
 ## Configuration & Secrets Management
 
-Secrets are never hard-coded
+- No secrets or credentials are hard-coded
+- Local development uses environment variables (`.env`, ignored)
+- CI/CD injects secrets securely via GitHub Actions
+- `.env.example` documents required variables without exposing values
 
-Local development uses environment variables (.env, ignored)
+---
 
-CI/CD injects secrets securely
+## CI/CD Considerations
 
-.env.example documents required variables without exposing values
+### CI vs CD Separation
 
-## CI/CD
+- **Continuous Integration (CI)** is responsible for:
+  - Dependency installation
+  - Static validation
+  - Unit and data quality tests
+  - Fast failure on schema or completeness issues
 
-The CI pipeline performs:
+- **Continuous Deployment (CD)** is intentionally decoupled and would only run **after CI passes**, handling:
+  - Terraform-based infrastructure provisioning
+  - Cloud resource configuration
+  - Platform-level deployments
 
-Dependency installation
+This separation mirrors real-world production pipelines and prevents unsafe deployments.
 
-Static validation
+### Parameterised Paths (No Hard-Coded Data Locations)
 
-Data quality tests
+All pipeline stages are fully parameterised:
 
-Failure on schema or completeness issues
+- No stage assumes fixed directories such as `data/bronze` or `data/silver`
+- Paths are passed explicitly between pipeline stages
+- Configuration is controlled via:
+  - CLI arguments (`run_pipeline.py`)
+  - Environment variables (`RAW_DATA_PATH`, `BRONZE_DIR`, `SILVER_DIR`, `GOLD_DIR`)
 
-This ensures:
+This enables:
 
-Code quality
+- Portable CI execution using temporary directories
+- Safe re-runs without overwriting data
+- Easy promotion between environments
 
-Data reliability
+### CI-Safe External Integrations
 
-Safe iteration
+External cloud integrations are **disabled by default in CI**:
+
+- Azure Data Lake uploads can be toggled off
+- Synapse external table creation is optional
+- Tests never require Azure credentials
+
+This ensures CI pipelines remain fast, deterministic, and reliable.
+
+### Test Strategy
+
+Tests are written to be environment-agnostic:
+
+- No dependency on committed data files
+- Temporary paths via `pytest tmp_path`
+- Positive and negative test cases, including:
+  - Missing input files
+  - Empty datasets
+  - Schema violations
+
+---
 
 ## Design Principles Demonstrated
 
-Separation of concerns
+- Separation of concerns
+- Cloud-first, but locally runnable
+- Config-driven execution
+- Defensive data engineering
+- Infrastructure as Code
+- CI-first development mindset
 
-Cloud-first thinking
-
-Immutable raw data
-
-Config-driven execution
-
-Defensive data engineering
-
-Security-aware development
+---
 
 ## Author
 
-George Ifi
-Data Engineer | Environmental Management MSc
-Focused on cloud-native data platforms and environmental tech.
+**George Ifi**  
+Data Engineer | Environmental Management MSc  
+Focused on cloud-native data platforms and environmental technology
