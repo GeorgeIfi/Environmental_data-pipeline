@@ -9,9 +9,9 @@ resource "azurerm_data_factory" "main" {
 }
 
 resource "azurerm_data_factory_linked_service_data_lake_storage_gen2" "main" {
-  name            = "ls-datalake"
-  data_factory_id = azurerm_data_factory.main.id
-  url             = azurerm_storage_account.datalake.primary_dfs_endpoint
+  name                 = "ls-datalake"
+  data_factory_id      = azurerm_data_factory.main.id
+  url                  = azurerm_storage_account.datalake.primary_dfs_endpoint
   use_managed_identity = true
 }
 
