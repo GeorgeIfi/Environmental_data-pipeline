@@ -2,14 +2,25 @@
 
 ## Overview
 
-This project implements an end-to-end **environmental data engineering pipeline** designed using cloud-native and production-grade data engineering principles. While Azure is the primary target platform, the pipeline is fully runnable **locally and in CI**, making it suitable for development, testing, and portfolio demonstration.
+This project implements an end-to-end environmental data engineering pipeline using modern data engineering patterns and cloud-native services. The architecture is suitable for:
 
-The pipeline follows the **medallion architecture** (Raw → Bronze → Silver → Gold) and emphasizes:
+Portfolio demonstration (storytelling to employers)
 
-- Infrastructure as Code (IaC)
-- Parameterised, config-driven execution
-- Strong data quality enforcement
-- CI-safe, reproducible workflows
+Cloud engineering learning (Terraform + Azure + CI/CD)
+
+Production pathway (lifecycle, RBAC, orchestration, separation of concerns)
+
+The pipeline follows the medallion architecture (Bronze → Silver → Gold) with an emphasis on:
+
+- Infrastructure as Code (Terraform)
+
+- Config-driven and parameterised execution
+
+- Data quality as a first-class construct
+
+- CI-safe workflows
+
+- Cost-aware and lifecycle-aware storage design
 
 ---
 
@@ -17,48 +28,69 @@ The pipeline follows the **medallion architecture** (Raw → Bronze → Silver �
 
 ```
 ┌──────────┐
-│  Source  │  (CSV / External data)
+│  Source  │  (CSV / External APIs / Weather feeds)
 └────┬─────┘
      │
      ▼
 ┌──────────┐
-│   Raw    │  Immutable landing zone
+│  Bronze  │  Landing & standardisation
 └────┬─────┘
      ▼
 ┌──────────┐
-│  Bronze  │  Standardisation & basic cleaning
+│  Silver  │  Validation & enrichment
 └────┬─────┘
      ▼
 ┌──────────┐
-│  Silver  │  Validated, enriched datasets
-└────┬─────┘
-     ▼
-┌──────────┐
-│   Gold   │  Curated aggregates for analytics
+│   Gold   │  Curated analytical outputs
 └──────────┘
+
 ```
 
 ---
 
 ## Cloud Mapping (Azure-oriented)
 
-| Pipeline Layer | Azure Service |
-|---------------|--------------|
-| Raw / Bronze / Silver / Gold | Azure Data Lake Storage Gen2 |
-| Orchestration | Apache Airflow |
-| Infrastructure | Terraform |
-| CI | GitHub Actions |
+| Layer / Concern      | Azure Service                 |
+| -------------------- | ----------------------------- |
+| Bronze/Silver/Gold   | ADLS Gen2                     |
+| Compute / Query      | Synapse Serverless SQL        |
+| Orchestration        | Azure Data Factory            |
+| Identity & Access    | Managed Identity + RBAC       |
+| Infrastructure (IaC) | Terraform                     |
+| CI                   | GitHub Actions                |
+
 
 ---
+## Cost & Lifecycle Awareness
 
+Cloud storage and analytics workloads grow over time. Lifecycle rules and cost controls are implemented as part of IaC:
+
+Bronze: short retention (ingestion artifacts)
+
+Silver: medium retention (validated datasets)
+
+Gold: long retention (analytics & BI consumption)
+---
+
+## Modes of Operation
+| Mode                 | Purpose                   | Characteristics                                          |
+| -------------------- | ------------------------- | -------------------------------------------------------- |
+| Local                | CI-safe dev/testing       | No cloud dependencies, deterministic                     |
+| Azure (Dev)          | Cloud learning + showcase | Synapse serverless + ADLS + ADF                          |
+| Azure (Prod Pattern) | Future expansion          | Private endpoints, governance, monitoring, orchestration |
+
+-- CI pipelines run in local mode by default to avoid external dependencies and cloud charges.
+---
 ## Tech Stack
 
 - Python 3.11
 - Pandas
-- Pytest
-- Apache Airflow
+- Pytest (data quality + transformation tests)
+- Azure Data Factory
 - Terraform (Azure)
-- Azure Data Lake Storage Gen2
+- ADLS Gen2(hierarchical namespace)
+- Synapse Serverless SQL
+- ADF 
 - GitHub Actions
 
 ---
@@ -66,40 +98,25 @@ The pipeline follows the **medallion architecture** (Raw → Bronze → Silver �
 ## Repository Structure
 
 ```
-.
 ├── infra/
 │   └── terraform/
 │       ├── main.tf
+│       ├── variables.tf
 │       ├── data_factory.tf
-│       └── variables.tf
+│       └── outputs.tf
 │
 ├── src/
 │   ├── ingestion/
-│   │   └── ingest_csv.py
 │   ├── transformations/
-│   │   ├── bronze_to_silver.py
-│   │   └── silver_to_gold.py
 │   ├── orchestration/
-│   │   └── airflow_dag.py
+│   │   └── adf_pipeline.py
 │   ├── quality/
-│   │   └── data_quality_checks.py
 │   └── utils/
-│       ├── azure_storage.py
-│       └── synapse_client.py
-│
-├── data/              # runtime-only, ignored by Git
-│   ├── raw/
-│   ├── bronze/
-│   ├── silver/
-│   └── gold/
 │
 ├── tests/
-│   ├── test_ingestion.py
-│   └── test_quality.py
-│
+├── data/ (runtime only, not committed)
 ├── run_pipeline.py
 ├── requirements.txt
-├── .gitignore
 ├── .env.example
 └── README.md
 ```
@@ -134,20 +151,29 @@ Quality checks are:
 
 ---
 
-## CI/CD Considerations
+## CI/CD Strategy
 
-### CI vs CD Separation
+# CI (Tests + Validation):
 
-- **Continuous Integration (CI)** is responsible for:
-  - Dependency installation
-  - Static validation
-  - Unit and data quality tests
-  - Fast failure on schema or completeness issues
+- Dependency resolution
 
-- **Continuous Deployment (CD)** is intentionally decoupled and would only run **after CI passes**, handling:
-  - Terraform-based infrastructure provisioning
-  - Cloud resource configuration
-  - Platform-level deployments
+- Linting & unit tests
+
+- Data quality tests (pytest)
+
+- Temporary filesystem paths for reproducibility
+
+- No cloud credentials required
+
+# CD (Infra + Deployment):
+
+Terraform plan/apply for Azure
+
+RBAC + Synapse + ADLS provisioning
+
+ADF orchestration deployment
+
+CI and CD are intentionally decoupled to reflect real production constraints.
 
 This separation mirrors real-world production pipelines and prevents unsafe deployments.
 

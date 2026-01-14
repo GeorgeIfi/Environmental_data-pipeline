@@ -4,12 +4,22 @@ import sys
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
+from pyspark.sql import SparkSession
 
 load_dotenv()
 
 from src.ingestion.ingest_csv import ingest_csv
 from src.transformations.bronze_to_silver import bronze_to_silver
 from src.transformations.silver_to_gold import silver_to_gold
+
+
+def get_spark_session():
+    """Create Spark session with Azure configuration"""
+    return SparkSession.builder \
+        .appName("EnvironmentalDataPipeline") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+        .getOrCreate()
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,7 +51,6 @@ def parse_args() -> argparse.Namespace:
         help="Gold output directory (or set GOLD_DIR).",
     )
 
-    # Optional: keep filenames predictable but overrideable
     parser.add_argument(
         "--bronze-file",
         dest="bronze_file",
@@ -95,14 +104,19 @@ def main() -> None:
     silver_path = silver_dir / args.silver_file
     gold_path = gold_dir / args.gold_file
 
-    # Run pipeline stages (parameterised end-to-end)
-    ingest_csv(raw_path, output_path=bronze_path)
-    bronze_to_silver(input_path=bronze_path, output_path=silver_path)
-    silver_to_gold(input_path=silver_path, output_path=gold_path)
-
-    print("Pipeline completed successfully")
+    # Create Spark session
+    spark = get_spark_session()
+    
+    try:
+        # Run pipeline stages (parameterised end-to-end)
+        ingest_csv(spark, raw_path, output_path=bronze_path)
+        bronze_to_silver(spark, input_path=bronze_path, output_path=silver_path)
+        silver_to_gold(spark, input_path=silver_path, output_path=gold_path)
+        
+        print("Pipeline completed successfully")
+    finally:
+        spark.stop()
 
 
 if __name__ == "__main__":
     main()
-

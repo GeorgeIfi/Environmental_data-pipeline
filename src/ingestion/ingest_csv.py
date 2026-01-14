@@ -1,41 +1,57 @@
-from __future__ import annotations
-
-import os
+#!/usr/bin/env python3
 from pathlib import Path
-import pandas as pd
+from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.functions import col, current_timestamp, lit
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 
 
-def _default_bronze_dir() -> Path:
+def ingest_csv(spark: SparkSession, input_path: Path, output_path: Path) -> DataFrame:
     """
-    Resolve bronze directory from environment.
-    Falls back to 'data/bronze' for local dev only.
+    Ingest raw CSV data into Bronze layer using PySpark
     """
-    return Path(os.getenv("BRONZE_DIR", "data/bronze"))
-
-
-def ingest_csv(input_path: str | Path, output_path: str | Path | None = None) -> pd.DataFrame:
-    input_path = Path(input_path)
-
-    # Negative case 1: Missing CSV
+    print(f"Ingesting CSV from {input_path} to {output_path}")
+    
+    # Check if file exists
     if not input_path.exists():
         raise FileNotFoundError(f"Input CSV not found: {input_path}")
-
-    # Read
-    df = pd.read_csv(input_path)
-
-    # Negative case 2: Empty file / no rows
-    if df.empty:
+    
+    # Define schema for better performance
+    schema = StructType([
+        StructField("date", StringType(), True),
+        StructField("location", StringType(), True),
+        StructField("latitude", DoubleType(), True),
+        StructField("longitude", DoubleType(), True),
+        StructField("site_type", StringType(), True),
+        StructField("zone", StringType(), True),
+        StructField("pollutant_type", StringType(), True),
+        StructField("value", DoubleType(), True),
+        StructField("unit", StringType(), True),
+        StructField("status", StringType(), True)
+    ])
+    
+    # Read CSV with schema
+    df = spark.read \
+        .option("header", "true") \
+        .option("inferSchema", "false") \
+        .schema(schema) \
+        .csv(str(input_path))
+    
+    # Check if empty
+    if df.count() == 0:
         raise ValueError(f"Input CSV is empty: {input_path}")
-
-    # Decide output location (parameterised)
-    if output_path is None:
-        out = _default_bronze_dir() / "raw_data.parquet"
-    else:
-        out = Path(output_path)
-
-    # Ensure directory exists (CI-safe)
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write
-    df.to_parquet(out, index=False)
-    return df
+    
+    # Add ingestion metadata
+    df_with_metadata = df \
+        .withColumn("ingestion_timestamp", current_timestamp()) \
+        .withColumn("source_file", lit(str(input_path.name)))
+    
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Write to Bronze layer as Parquet
+    df_with_metadata.write \
+        .mode("overwrite") \
+        .parquet(str(output_path))
+    
+    print(f"✓ Ingested {df_with_metadata.count()} rows to Bronze layer")
+    return df_with_metadata
