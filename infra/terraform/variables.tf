@@ -49,6 +49,29 @@ variable "client_ip" {
   nullable    = false
 }
 
+# ============================================================================
+# Monitoring & Alert Variables (New)
+# ============================================================================
+
+variable "alert_email_address" {
+  description = "Email address for ADF failure alerts"
+  type        = string
+  default     = "data-team@company.com"
+}
+
+variable "slack_webhook_url" {
+  description = "Slack webhook URL for notifications (optional)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "enable_detailed_monitoring" {
+  description = "Enable detailed Azure Monitor metrics and logging"
+  type        = bool
+  default     = true
+}
+
 variable "service_principal_id" {
   description = "Azure AD Service Principal App ID for authentication"
   type        = string

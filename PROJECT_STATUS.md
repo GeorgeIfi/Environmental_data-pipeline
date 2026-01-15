@@ -1,6 +1,6 @@
 # Project Status: Azure-Native Environmental Data ETL Pipeline
 
-**Status**: ✅ **PRODUCTION-READY FOR DEPLOYMENT**
+**Status**:  **PRODUCTION-READY FOR DEPLOYMENT**
 
 **Last Updated**: $(date)
 
@@ -28,7 +28,7 @@ The environmental data pipeline has been **fully converted to Azure-native archi
 
 ## What's Included
 
-### ✅ Deliverables
+###  Deliverables
 
 #### 1. **Azure Functions** (3 HTTP-triggered functions)
 - `bronze_ingestion`: CSV ingestion from landing → Bronze parquet
@@ -200,11 +200,11 @@ curl -X POST "$ENDPOINT/api/bronze-ingest" -H "Content-Type: application/json" \
 
 ### Local Testing (Pre-deployment)
 ```
-✅ CSV ingestion: 2,174 rows read successfully
-✅ Bronze to Silver: Validation rules applied correctly
-✅ Silver to Gold: Aggregations computed by date/location
-✅ Parquet serialization: Compression working, files created
-✅ Full pipeline: All 3 stages completed end-to-end
+    CSV ingestion: 2,174 rows read successfully
+ Bronze to Silver: Validation rules applied correctly
+ Silver to Gold: Aggregations computed by date/location
+ Parquet serialization: Compression working, files created
+ Full pipeline: All 3 stages completed end-to-end
 ```
 
 ### Code Quality
@@ -312,26 +312,26 @@ requirements.txt                       (Pandas dependencies)
 
 ## What's Ready Now
 
-### ✅ Can Deploy Immediately
+###  Can Deploy Immediately
 - Terraform infrastructure code (all 30+ resources)
 - Azure Functions Python code (all 3 functions)
 - Deployment automation script
 - Terraform outputs configuration
 - RBAC and security policies
 
-### ✅ Can Test Immediately
+###  Can Test Immediately
 - Deploy functions locally with `func start`
 - Test each function with curl before deployment
 - Verify Terraform plan with `terraform plan`
 - Validate configuration with `terraform validate`
 
-### ✅ Can Monitor Immediately
+### Can Monitor Immediately
 - Application Insights dashboards
 - Azure Data Factory Monitor panel
 - Function app logs via Azure CLI
 - Storage metrics and diagnostics
 
-### ✅ Can Scale Immediately
+### Can Scale Immediately
 - Auto-scaling on Consumption tier
 - Cost monitoring via Azure Cost Management
 - Performance optimization via Application Insights
@@ -414,4 +414,4 @@ The environmental data pipeline has been **completely transformed into a product
 **Orchestration**: Fully automated via Azure Data Factory
 **Monitoring**: Real-time via Application Insights
 
-**Status**: ✅ **READY FOR PRODUCTION DEPLOYMENT**
+**Status**:  **READY FOR PRODUCTION DEPLOYMENT**
