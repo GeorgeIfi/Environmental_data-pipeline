@@ -9,17 +9,19 @@ resource "azurerm_data_factory" "main" {
 }
 
 resource "azurerm_data_factory_linked_service_data_lake_storage_gen2" "main" {
-  name                 = "ls-datalake"
-  data_factory_id      = azurerm_data_factory.main.id
-  url                  = azurerm_storage_account.datalake.primary_dfs_endpoint
+  name                = "ls-datalake"
+  resource_group_name = azurerm_resource_group.main.name
+  data_factory_name   = azurerm_data_factory.main.name
+  url                 = azurerm_storage_account.datalake.primary_dfs_endpoint
   use_managed_identity = true
 }
 
 # ADF pipeline for environmental data processing
 resource "azurerm_data_factory_pipeline" "environmental_pipeline" {
-  name            = "environmental-data-pipeline"
-  data_factory_id = azurerm_data_factory.main.id
-  description     = "Medallion architecture pipeline for environmental data"
+  name              = "environmental-data-pipeline"
+  resource_group_name = azurerm_resource_group.main.name
+  data_factory_name = azurerm_data_factory.main.name
+  description       = "Medallion architecture pipeline for environmental data"
 
   activities_json = jsonencode([
     {
@@ -40,9 +42,10 @@ resource "azurerm_data_factory_pipeline" "environmental_pipeline" {
 
 # ADF trigger for daily execution
 resource "azurerm_data_factory_trigger_schedule" "daily_trigger" {
-  name            = "daily-environmental-trigger"
-  data_factory_id = azurerm_data_factory.main.id
-  pipeline_name   = azurerm_data_factory_pipeline.environmental_pipeline.name
+  name                = "daily-environmental-trigger"
+  resource_group_name = azurerm_resource_group.main.name
+  data_factory_name   = azurerm_data_factory.main.name
+  pipeline_name       = azurerm_data_factory_pipeline.environmental_pipeline.name
   
   frequency = "Day"
   interval  = 1

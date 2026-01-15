@@ -3,13 +3,18 @@
 *.env
 .venv
 
-# Terraform state files
+# Terraform state and lock files
 *.tfstate
 *.tfstate.*
+*.tfstate.*.backup
 *.tfvars
 .terraform/
 .terraform.lock.hcl
+**/.terraform/
+**/.terraform.lock.hcl
 infra/outputs.json
+infra/terraform/tfplan
+infra/terraform/tfplan.*
 
 # Data files
 data/

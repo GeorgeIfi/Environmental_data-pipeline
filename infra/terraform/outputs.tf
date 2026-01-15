@@ -27,11 +27,7 @@ output "resource_group_name" {
 }
 
 output "service_principal_app_id" {
-  value = azuread_application.pipeline_app.client_id
-}
-
-output "service_principal_password" {
-  value     = azuread_service_principal_password.pipeline_sp_password.value
+  value     = var.service_principal_id
   sensitive = true
 }
 

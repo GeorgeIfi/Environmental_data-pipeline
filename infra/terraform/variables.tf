@@ -1,3 +1,17 @@
+variable "subscription_id" {
+  description = "Azure subscription ID"
+  type        = string
+  sensitive   = true
+  nullable    = false
+}
+
+variable "tenant_id" {
+  description = "Azure tenant ID"
+  type        = string
+  sensitive   = true
+  nullable    = false
+}
+
 variable "location" {
   description = "Azure region for deployment"
   type        = string
@@ -32,5 +46,12 @@ variable "project_name" {
 variable "client_ip" {
   description = "Public IPv4 of developer machine for Synapse firewall"
   type        = string
+  nullable    = false
+}
+
+variable "service_principal_id" {
+  description = "Azure AD Service Principal App ID for authentication"
+  type        = string
+  sensitive   = true
   nullable    = false
 }
