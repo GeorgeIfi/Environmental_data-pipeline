@@ -170,7 +170,8 @@ resource "azurerm_storage_data_lake_gen2_path" "data_layers" {
 }
 
 # -----------------------------------
-# Synapse Workspace (Serverless-focused)
+# Synapse Workspace (SQL-focused)
+# NOTE: Spark pool removed - using pandas for transformations
 # -----------------------------------
 resource "azurerm_synapse_workspace" "main" {
   name                                 = "syn-${var.project_name}-${var.environment}-${random_string.suffix.result}"
@@ -185,6 +186,11 @@ resource "azurerm_synapse_workspace" "main" {
     project     = var.project_name
   }
 }
+
+# -----------------------------------
+# Note: Spark Pool removed (using pandas instead of Spark)
+# Synapse workspace is available for SQL analytics queries
+# -----------------------------------
 
 # -----------------------------------
 # RBAC: Synapse Workspace MI -> Storage Blob Data Contributor

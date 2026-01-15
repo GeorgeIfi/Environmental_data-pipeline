@@ -4,7 +4,6 @@ import sys
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from pyspark.sql import SparkSession
 
 load_dotenv()
 
@@ -13,17 +12,8 @@ from src.transformations.bronze_to_silver import bronze_to_silver
 from src.transformations.silver_to_gold import silver_to_gold
 
 
-def get_spark_session():
-    """Create Spark session with Azure configuration"""
-    return SparkSession.builder \
-        .appName("EnvironmentalDataPipeline") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .getOrCreate()
-
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the weather environmental data pipeline.")
+    parser = argparse.ArgumentParser(description="Run the weather environmental data pipeline (Pandas-based).")
 
     parser.add_argument(
         "--raw-path",
@@ -73,49 +63,51 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _die(msg: str, code: int = 2) -> None:
-    print(f"ERROR: {msg}", file=sys.stderr)
-    sys.exit(code)
-
-
-def main() -> None:
-    args = parse_args()
-
-    if not args.raw_path:
-        _die(
-            "No raw CSV path provided. Use --raw-path or set RAW_DATA_PATH.\n"
-            "Example: python run_pipeline.py --raw-path data/raw/your_file.csv"
-        )
-
-    raw_path = Path(args.raw_path)
-    if not raw_path.exists() or not raw_path.is_file():
-        _die(f"Raw CSV path does not exist or is not a file: {raw_path}")
-
-    bronze_dir = Path(args.bronze_dir)
-    silver_dir = Path(args.silver_dir)
-    gold_dir = Path(args.gold_dir)
-
-    # Ensure directories exist (CI-safe)
-    bronze_dir.mkdir(parents=True, exist_ok=True)
-    silver_dir.mkdir(parents=True, exist_ok=True)
-    gold_dir.mkdir(parents=True, exist_ok=True)
-
-    bronze_path = bronze_dir / args.bronze_file
-    silver_path = silver_dir / args.silver_file
-    gold_path = gold_dir / args.gold_file
-
-    # Create Spark session
-    spark = get_spark_session()
+def main():
+    """Execute the medallion architecture ETL pipeline (Pandas-based)"""
     
+    args = parse_args()
+    
+    # Validate inputs
+    raw_path = Path(args.raw_path)
+    if not raw_path.exists():
+        print(f"❌ Error: Raw data file not found: {raw_path}")
+        sys.exit(1)
+
+    bronze_path = Path(args.bronze_dir) / args.bronze_file
+    silver_path = Path(args.silver_dir) / args.silver_file
+    gold_path = Path(args.gold_dir) / args.gold_file
+
     try:
-        # Run pipeline stages (parameterised end-to-end)
-        ingest_csv(spark, raw_path, output_path=bronze_path)
-        bronze_to_silver(spark, input_path=bronze_path, output_path=silver_path)
-        silver_to_gold(spark, input_path=silver_path, output_path=gold_path)
-        
-        print("Pipeline completed successfully")
-    finally:
-        spark.stop()
+        # Stage 1: Ingestion (CSV → Bronze Parquet)
+        print("\n" + "="*60)
+        print("STAGE 1: DATA INGESTION (CSV → Bronze Parquet)")
+        print("="*60)
+        df_bronze = ingest_csv(raw_path, bronze_path)
+
+        # Stage 2: Cleaning & Validation (Bronze → Silver Parquet)
+        print("\n" + "="*60)
+        print("STAGE 2: DATA CLEANING & VALIDATION (Bronze → Silver)")
+        print("="*60)
+        df_silver = bronze_to_silver(bronze_path, silver_path)
+
+        # Stage 3: Aggregation & Analytics (Silver → Gold Parquet)
+        print("\n" + "="*60)
+        print("STAGE 3: AGGREGATION & ANALYTICS (Silver → Gold)")
+        print("="*60)
+        df_gold = silver_to_gold(silver_path, gold_path)
+
+        print("\n" + "="*60)
+        print("✅ Pipeline completed successfully!")
+        print("="*60)
+        print(f"📊 Data Summary:")
+        print(f"  • Bronze: {len(df_bronze)} rows")
+        print(f"  • Silver: {len(df_silver)} rows")
+        print(f"  • Gold: {len(df_gold)} aggregations")
+
+    except Exception as e:
+        print(f"\n❌ Pipeline failed: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
