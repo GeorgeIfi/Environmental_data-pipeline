@@ -237,117 +237,23 @@ resource "azurerm_synapse_firewall_rule" "allow_all_azure_services" {
 
 # -----------------------------------
 # Data Factory Linked Services
+# (Data Lake linked service defined in data_factory.tf)
 # -----------------------------------
-resource "azurerm_data_factory_linked_service_azure_blob_storage" "code_storage_linked_service" {
-  name                = "CodeStorageLinkedService"
-  resource_group_name = azurerm_resource_group.main.name
-  data_factory_name   = azurerm_data_factory.main.name
-  connection_string   = azurerm_storage_account.datalake.primary_connection_string
-}
-
-resource "azurerm_data_factory_linked_service_azure_blob_storage" "data_lake_linked_service" {
-  name                = "DataLakeLinkedService"
-  resource_group_name = azurerm_resource_group.main.name
-  data_factory_name   = azurerm_data_factory.main.name
-  connection_string   = azurerm_storage_account.datalake.primary_connection_string
-}
 
 # -----------------------------------
 # Data Factory Datasets
+# (Handled by Azure Functions transformations)
 # -----------------------------------
-resource "azurerm_data_factory_dataset_delimited_text" "landing_csv" {
-  name                = "LandingCSVDataset"
-  resource_group_name = azurerm_resource_group.main.name
-  data_factory_name   = azurerm_data_factory.main.name
-  linked_service_name = azurerm_data_factory_linked_service_azure_blob_storage.data_lake_linked_service.name
-
-  azure_blob_storage_location {
-    container = "environmental-data"
-    path      = "landing"
-    filename  = "*.csv"
-  }
-
-  column_delimiter = ","
-  first_row_as_header = true
-}
-
-resource "azurerm_data_factory_dataset_parquet" "bronze_parquet" {
-  name                = "BronzeParquetDataset"
-  resource_group_name = azurerm_resource_group.main.name
-  data_factory_name   = azurerm_data_factory.main.name
-  linked_service_name = azurerm_data_factory_linked_service_azure_blob_storage.data_lake_linked_service.name
-
-  azure_blob_storage_location {
-    container = "environmental-data"
-    path      = "bronze/weather"
-  }
-}
 
 # -----------------------------------
 # Data Factory Pipeline with Copy Activity
+# (Replaced by Azure Functions orchestration)
 # -----------------------------------
-resource "azurerm_data_factory_pipeline" "ingestion_pipeline" {
-  name                = "EnvironmentalDataIngestionPipeline"
-  resource_group_name = azurerm_resource_group.main.name
-  data_factory_name   = azurerm_data_factory.main.name
-  description         = "Automated ingestion from landing to bronze layer"
-
-  activities_json = jsonencode([
-    {
-      name = "CopyLandingToBronze"
-      type = "Copy"
-      description = "Copy CSV files from landing to bronze layer as Parquet"
-      inputs = [
-        {
-          referenceName = azurerm_data_factory_dataset_delimited_text.landing_csv.name
-          type = "DatasetReference"
-        }
-      ]
-      outputs = [
-        {
-          referenceName = azurerm_data_factory_dataset_parquet.bronze_parquet.name
-          type = "DatasetReference"
-        }
-      ]
-      typeProperties = {
-        source = {
-          type = "DelimitedTextSource"
-          storeSettings = {
-            type = "AzureBlobStorageReadSettings"
-            recursive = true
-            wildcardFileName = "*.csv"
-          }
-        }
-        sink = {
-          type = "ParquetSink"
-          storeSettings = {
-            type = "AzureBlobStorageWriteSettings"
-          }
-        }
-        enableStaging = false
-      }
-    }
-  ])
-}
 
 # -----------------------------------
 # Data Factory Trigger for Blob Events
+# (Replaced by Azure Functions orchestration)
 # -----------------------------------
-resource "azurerm_data_factory_trigger_blob_event" "landing_trigger" {
-  name            = "LandingFolderTrigger"
-  data_factory_id = azurerm_data_factory.main.id
-  storage_account_id = azurerm_storage_account.datalake.id
-  
-  events = ["Microsoft.Storage.BlobCreated"]
-  blob_path_begins_with = "/blobServices/default/containers/environmental-data/blobs/landing/"
-  blob_path_ends_with = ".csv"
-  
-  activated = true
-  
-  pipeline {
-    name = azurerm_data_factory_pipeline.ingestion_pipeline.name
-  }
-}
 
 # -----------------------------------
 # Azure Functions Infrastructure

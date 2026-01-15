@@ -2,51 +2,61 @@
 
 ## Overview
 
-This project implements a **fully Azure-native**, cloud-orchestrated environmental data engineering pipeline. The architecture follows the **medallion pattern** (Bronze → Silver → Gold) with orchestration via Azure Data Factory and processing via Azure Functions.
+This project implements a **fully Azure-native**, serverless ETL pipeline for environmental data processing. The architecture follows the **medallion pattern** (Bronze → Silver → Gold) with orchestration via Azure Data Factory and processing via Azure Functions.
 
 ### Key Features
 
-- **Cloud-Native Architecture**: 100% Azure-hosted, no local compute required
-- **Serverless Processing**: Azure Functions with Consumption tier pricing
-- **Infrastructure as Code**: Terraform-managed resources (30+ Azure components)
-- **Automated Orchestration**: Azure Data Factory pipelines with event-driven triggers
+- **Cloud-Native Architecture**: 100% Azure-hosted, serverless compute (no VMs)
+- **Azure Functions**: 3 HTTP-triggered functions for medallion layer processing
+- **Infrastructure as Code**: Terraform-managed infrastructure (22 Azure resources, validated for duplicates)
+- **Azure Data Factory**: Orchestration pipeline using WebActivity to invoke Functions
 - **Production-Ready**: RBAC, Managed Identities, monitoring via Application Insights
-- **Data Quality**: Validation and cleansing in Silver layer, aggregations in Gold
+- **Data Quality**: Validation and cleansing in Silver layer, aggregations in Gold layer
 - **Scalable Storage**: ADLS Gen2 with medallion architecture for data governance
+- **Cost Optimized**: Consumption tier pricing for Functions (pay-per-execution)
 
 ### Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│              Azure Data Factory (Orchestration)              │
-├──────────────────────────────────────────────────────────────┤
-│   Web Activity                Web Activity        Web Activity│
-│   (Bronze Ingest)     →    (Silver Transform)   → (Gold Agg) │
-└──────────┬─────────────────────────┬──────────────────┬──────┘
-           │                         │                  │
-           ▼                         ▼                  ▼
-    ┌────────────────────────────────────────────────────────┐
-    │         Azure Functions (Consumption Tier)            │
-    │                                                        │
-    │  • bronze-ingest (CSV → Parquet)                      │
-    │  • silver-transform (Cleaning & Validation)           │
-    │  • gold-transform (Aggregation & Analytics)           │
-    │                                                        │
-    │  All functions handle Azure Storage operations        │
-    │  Managed Identity provides secure authentication       │
-    └────────────┬───────────────────────────────────────────┘
-                 │
-                 ▼
-    ┌────────────────────────────────────────────────────────┐
-    │        ADLS Gen2 Storage (Data Lake)                  │
-    │                                                        │
-    │  landing/  →  bronze/  →  silver/  →  gold/          │
-    │                                                        │
-    │  • Raw CSV ingestion                                  │
-    │  • Parquet format (compression, schema)               │
-    │  • Row-level lineage tracking                         │
-    │  • Data governance via containers                     │
-    └────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│            Azure Data Factory (orchestration_pipeline)         │
+│                    WebActivity-based Pipeline                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  BronzeIngestActivity → SilverTransformActivity → GoldTransActivity
+│  (POST to /api/*)    (POST to /api/*)         (POST to /api/*)│
+└───────────────────┬──────────────────┬──────────────────┬──────┘
+                    │                  │                  │
+                    ▼                  ▼                  ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │         Azure Functions (Consumption Y1 Tier)              │
+    │          HTTP-Triggered, Managed Identity Auth             │
+    │                                                             │
+    │  Function 1: bronze-ingest (CSV → Parquet)               │
+    │  Function 2: silver-transform (Validation & Cleaning)    │
+    │  Function 3: gold-transform (Aggregation & Analytics)    │
+    │                                                             │
+    │  Runtime: Python 3.10 | Storage: Pandas DataFrames       │
+    │  Monitoring: Application Insights (automatic)             │
+    └─────────────────────┬─────────────────────────────────────┘
+                          │
+                          ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │        ADLS Gen2 Storage (Data Lake)                        │
+    │       Managed Identity–based Access Control                │
+    │                                                             │
+    │  landing/ → bronze/ → silver/ → gold/                      │
+    │  (CSV)      (Parquet) (Clean) (Analytics)                  │
+    │                                                             │
+    │  Filesystem: environmental-data                            │
+    │  Format: CSV (landing) / Parquet (bronze, silver, gold)   │
+    │  Compression: Snappy (reduce storage & I/O)              │
+    └─────────────────────────────────────────────────────────────┘
+
+    Additional Resources:
+    ├─ Synapse Workspace (SQL analytics on gold layer)
+    ├─ Container Registry (future Docker images)
+    └─ App Service Plan (Functions host)
 ```
 
 ## Quick Start
@@ -55,42 +65,50 @@ This project implements a **fully Azure-native**, cloud-orchestrated environment
 - Azure CLI (`az login`)
 - Terraform 1.7.0+
 - Python 3.10+
-- `.env` file with Azure credentials
+- `.env` file with Azure credentials (subscription_id, tenant_id, client_id, client_secret)
 
-### 1. Deploy Infrastructure
+### 1. Validate Infrastructure
 ```bash
 cd infra/terraform
 terraform init
-terraform plan
-terraform apply
+terraform validate  # Verify configuration (no duplicates)
+terraform plan      # Preview resources to be created
 ```
 
-### 2. Deploy Azure Functions
+### 2. Deploy Infrastructure to Azure
 ```bash
-chmod +x deploy_functions.sh
-./deploy_functions.sh
+terraform apply     # Deploy 22 Azure resources
 ```
 
-### 3. Trigger Pipeline Manually
+### 3. Deploy Azure Functions
+The Functions code is in `src/` (bronze_ingestion, silver_transformation, gold_transformation).
+See [AZURE_FUNCTIONS_IMPLEMENTATION.md](AZURE_FUNCTIONS_IMPLEMENTATION.md) for deployment steps.
+
 ```bash
-# Get function endpoint
-FUNC_ENDPOINT=$(terraform -chdir=infra/terraform output -raw function_app_endpoint)
-STORAGE_ACCOUNT=$(terraform -chdir=infra/terraform output -raw storage_account_name)
-STORAGE_KEY=$(terraform -chdir=infra/terraform output -raw storage_account_key)
-
-# Test bronze ingestion (upload CSV first to landing/)
-curl -X POST "${FUNC_ENDPOINT}/api/bronze-ingest" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"storage_account\": \"${STORAGE_ACCOUNT}\",
-    \"storage_key\": \"${STORAGE_KEY}\",
-    \"container\": \"environmental-data\",
-    \"csv_file\": \"landing/weather_raw.csv\"
-  }"
+# Functions are Python 3.10-based, deployed to Function App via:
+# - Azure Functions Core Tools, or
+# - Direct zip deployment, or
+# - GitHub Actions CI/CD pipeline
 ```
 
-### 4. Configure Automated Triggers
-See [ADF_ORCHESTRATION.md](ADF_ORCHESTRATION.md) for scheduling and event-driven triggers.
+### 4. Test the Orchestration Pipeline
+```bash
+# Option A: Manual trigger via Azure Portal
+# Navigate to Data Factory → orchestration_pipeline → Trigger now
+
+# Option B: Programmatic trigger (requires authentication)
+az datafactory pipeline create-run \
+  --factory-name adf-environmental-<suffix> \
+  --name orchestration_pipeline \
+  --resource-group rg-envpipeline-dev
+```
+
+### 5. Monitor Execution
+```bash
+# Application Insights: Function traces and performance metrics
+# Data Factory: Pipeline run history and activity logs
+# ADLS Gen2: Validate data movement through medallion layers
+```
 
 ---
 
@@ -102,53 +120,57 @@ See [ADF_ORCHESTRATION.md](ADF_ORCHESTRATION.md) for scheduling and event-driven
 | **Bronze Layer** | ADLS Gen2 containers | Raw CSV landing, standardized Parquet |
 | **Silver Layer** | ADLS Gen2 containers | Cleaned, validated, deduplicated data |
 | **Gold Layer** | ADLS Gen2 containers | Aggregated, analytics-ready datasets |
-| **Processing** | Azure Functions | HTTP-triggered, serverless ETL execution |
-| **Orchestration** | Azure Data Factory | Pipeline coordination, triggering, monitoring |
-| **Identity** | Managed Identity | Secure, credential-less authentication |
+| **Processing** | Azure Functions | HTTP-triggered, serverless ETL execution (3 functions) |
+| **Orchestration** | Azure Data Factory | WebActivity pipeline coordination to Functions |
+| **Identity** | Managed Identity | Secure, credential-less Function authentication |
 | **Monitoring** | Application Insights | Function performance, logs, traces |
-| **Infrastructure** | Terraform | 30+ Azure resources, IaC-managed |
+| **Analytics** | Synapse Workspace | SQL analytics on Gold layer data |
+| **Infrastructure** | Terraform | 22 Azure resources, no duplicates, IaC-managed |
 
 ---
 
 ## Cost & Lifecycle Management
 
-### Storage Tiering
-- **Bronze**: Short retention (raw ingestion artifacts)
-- **Silver**: Medium retention (validated, deduplicated)
-- **Gold**: Long retention (production analytics)
-
 ### Consumption Tier Benefits
-- **Pay-per-execution**: Only charged when functions run
-- **Auto-scaling**: Automatic scale-out under load
+- **Pay-per-execution**: Only charged when Functions run (first 1M executions/month free)
+- **Auto-scaling**: Automatic scale-out under concurrent load
 - **No minimum**: $0 cost when idle
-- **Suitable for**: Intermittent or variable workloads
+- **Suitable for**: Intermittent or batch workloads
+
+### Data Retention Strategy
+- **Bronze**: Short retention (raw ingestion artifacts, 30-90 days)
+- **Silver**: Medium retention (validated, deduplicated, 90-180 days)
+- **Gold**: Long retention (production analytics, 1+ years)
 
 ### Cost Estimation
 Assuming 2,174 row CSV processed daily:
-- **Function executions**: ~$0.20/day (3 × 1M free executions/month)
-- **Storage**: ~$0.02/day (ADLS Gen2 read operations)
-- **Data Factory**: ~$0.50/day (web activity costs)
-- **Total**: ~$0.72/day (~$22/month)
+- **Function executions**: ~$0.20/day (3 × invocations, within free tier)
+- **Storage (ADLS Gen2)**: ~$0.02/day (read operations + storage)
+- **Data Factory**: ~$0.50/day (web activity executions)
+- **Application Insights**: ~$0.05/day (data ingestion)
+- **Total**: ~$0.77/day (~$23/month)
+
+*Note: Pricing assumes standard ADLS Gen2 read/write rates and uksouth region. Actual costs may vary.*
 
 ---
 
 ## Documentation
 
-- [ADF_ORCHESTRATION.md](ADF_ORCHESTRATION.md) - Complete deployment and execution guide
-- [azure_functions/README.md](azure_functions/README.md) - Function details and local testing
+- [AZURE_FUNCTIONS_IMPLEMENTATION.md](AZURE_FUNCTIONS_IMPLEMENTATION.md) - Complete Azure Functions code and deployment guide
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Step-by-step infrastructure deployment
 - [TRANSFORMATION_VALIDATION.md](TRANSFORMATION_VALIDATION.md) - Data quality validation logic
-- [infra/terraform/](infra/terraform/) - Infrastructure as Code
+- [infra/terraform/](infra/terraform/) - Infrastructure as Code (22 validated resources, no duplicates)
+- [src/](src/) - Python transformation code (Pandas-based)
 
 ---
 
 ## Mode of Operation
 
-| Mode | Purpose | Environment | Trigger |
-|------|---------|-------------|---------|
-| **Local** | Development, testing, CI | Local machine | Manual execution |
-| **Cloud - Manual** | Testing, validation | Azure | Manual ADF trigger |
-| **Cloud - Event** | Production | Azure | Blob upload to landing/ |
-| **Cloud - Scheduled** | Regular batches | Azure | Daily/hourly ADF schedule |
+| Mode | Purpose | Environment | Trigger | Pipeline |
+|------|---------|-------------|---------|----------|
+| **Local** | Development, testing, CI | Local machine | Manual execution | N/A |
+| **Cloud - Manual** | Testing, validation | Azure | Manual ADF trigger | `orchestration_pipeline` (WebActivity) |
+| **Cloud - Event** | Production | Azure | Blob upload to landing/ | *(Currently manual only; configure blob triggers in ADF)* |
 
 ---
 
