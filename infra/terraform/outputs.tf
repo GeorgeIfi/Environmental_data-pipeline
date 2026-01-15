@@ -22,6 +22,18 @@ output "container_registry_login_server" {
   value = azurerm_container_registry.main.login_server
 }
 
+output "function_app_name" {
+  value = azurerm_function_app.etl_functions.name
+}
+
+output "function_app_endpoint" {
+  value = "https://${azurerm_function_app.etl_functions.default_hostname}"
+}
+
+output "function_app_identity_principal_id" {
+  value = azurerm_user_assigned_identity.function_identity.principal_id
+}
+
 output "resource_group_name" {
   value = azurerm_resource_group.main.name
 }

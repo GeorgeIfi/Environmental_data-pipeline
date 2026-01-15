@@ -348,3 +348,209 @@ resource "azurerm_data_factory_trigger_blob_event" "landing_trigger" {
     name = azurerm_data_factory_pipeline.ingestion_pipeline.name
   }
 }
+
+# -----------------------------------
+# Azure Functions Infrastructure
+# - 3 HTTP-triggered functions for medallion ETL
+# - Orchestrated by Data Factory
+# -----------------------------------
+
+# App Service Plan (Consumption tier for cost efficiency)
+resource "azurerm_app_service_plan" "functions" {
+  name                = "asp-${var.project_name}-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  kind                = "FunctionApp"
+  reserved            = true
+
+  sku {
+    tier = "Dynamic"
+    size = "Y1"
+  }
+
+  tags = {
+    environment = var.environment
+    project     = var.project_name
+    component   = "functions"
+  }
+}
+
+# Storage Account for Function App runtime
+resource "azurerm_storage_account" "function_storage" {
+  name                     = "stfunc${var.project_name}${random_string.suffix.result}"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  tags = {
+    environment = var.environment
+    project     = var.project_name
+    component   = "functions"
+  }
+}
+
+# Function App Identity (Managed Identity for secure auth)
+resource "azurerm_user_assigned_identity" "function_identity" {
+  name                = "id-${var.project_name}-functions"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+
+  tags = {
+    environment = var.environment
+    project     = var.project_name
+  }
+}
+
+# RBAC: Grant Function Identity access to Data Lake Storage
+resource "azurerm_role_assignment" "function_storage_contributor" {
+  scope              = azurerm_storage_account.datalake.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id       = azurerm_user_assigned_identity.function_identity.principal_id
+}
+
+# Function App
+resource "azurerm_function_app" "etl_functions" {
+  name                       = "func-${var.project_name}-${random_string.suffix.result}"
+  location                   = azurerm_resource_group.main.location
+  resource_group_name        = azurerm_resource_group.main.name
+  app_service_plan_id        = azurerm_app_service_plan.functions.id
+  storage_account_name       = azurerm_storage_account.function_storage.name
+  storage_account_access_key = azurerm_storage_account.function_storage.primary_access_key
+  version                    = "~4"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.function_identity.id]
+  }
+
+  app_settings = {
+    FUNCTIONS_WORKER_RUNTIME                = "python"
+    FUNCTIONS_WORKER_RUNTIME_VERSION        = "3.10"
+    AzureWebJobsStorage                     = azurerm_storage_account.function_storage.primary_blob_connection_string
+    WEBSITE_RUN_FROM_PACKAGE                = "1"
+    APPINSIGHTS_INSTRUMENTATIONKEY          = azurerm_application_insights.functions.instrumentation_key
+    APPLICATIONINSIGHTS_CONNECTION_STRING   = azurerm_application_insights.functions.connection_string
+    
+    # Data Lake Storage connection
+    DATA_LAKE_STORAGE_ACCOUNT_NAME          = azurerm_storage_account.datalake.name
+    DATA_LAKE_STORAGE_ACCOUNT_KEY           = azurerm_storage_account.datalake.primary_access_key
+    DATA_LAKE_CONTAINER_NAME                = "environmental-data"
+  }
+
+  depends_on = [
+    azurerm_role_assignment.function_storage_contributor
+  ]
+
+  tags = {
+    environment = var.environment
+    project     = var.project_name
+    component   = "functions"
+  }
+}
+
+# Application Insights for Function monitoring
+resource "azurerm_application_insights" "functions" {
+  name                = "appins-${var.project_name}-functions"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  application_type    = "web"
+
+  tags = {
+    environment = var.environment
+    project     = var.project_name
+    component   = "functions"
+  }
+}
+
+# Data Factory Linked Service for Azure Functions
+resource "azurerm_data_factory_linked_service_web" "function_service" {
+  name                     = "ls_azure_functions"
+  data_factory_id          = azurerm_data_factory.main.id
+  resource_group_name      = azurerm_resource_group.main.name
+  authentication_type      = "Anonymous"
+  url                      = "https://${azurerm_function_app.etl_functions.default_hostname}"
+}
+
+# Data Factory Pipeline for orchestrating Azure Functions
+resource "azurerm_data_factory_pipeline" "orchestration_pipeline" {
+  name                = "OrchestrationPipeline"
+  data_factory_id     = azurerm_data_factory.main.id
+  resource_group_name = azurerm_resource_group.main.name
+
+  activities_json = jsonencode([
+    {
+      name = "BronzeIngestActivity"
+      type = "WebActivity"
+      typeProperties = {
+        method = "POST"
+        url    = "https://${azurerm_function_app.etl_functions.default_hostname}/api/bronze-ingest"
+        headers = {
+          "Content-Type" = "application/json"
+        }
+        body = {
+          storage_account = azurerm_storage_account.datalake.name
+          storage_key     = azurerm_storage_account.datalake.primary_access_key
+          container       = "environmental-data"
+          csv_file        = "landing/weather_raw.csv"
+        }
+        authentication = {
+          type = "Anonymous"
+        }
+      }
+      dependsOn = []
+    },
+    {
+      name = "SilverTransformActivity"
+      type = "WebActivity"
+      typeProperties = {
+        method = "POST"
+        url    = "https://${azurerm_function_app.etl_functions.default_hostname}/api/silver-transform"
+        headers = {
+          "Content-Type" = "application/json"
+        }
+        body = {
+          storage_account = azurerm_storage_account.datalake.name
+          storage_key     = azurerm_storage_account.datalake.primary_access_key
+          container       = "environmental-data"
+          bronze_file     = "bronze/raw_data.parquet"
+        }
+        authentication = {
+          type = "Anonymous"
+        }
+      }
+      dependsOn = [
+        {
+          activity = "BronzeIngestActivity"
+          dependencyConditions = ["Succeeded"]
+        }
+      ]
+    },
+    {
+      name = "GoldTransformActivity"
+      type = "WebActivity"
+      typeProperties = {
+        method = "POST"
+        url    = "https://${azurerm_function_app.etl_functions.default_hostname}/api/gold-transform"
+        headers = {
+          "Content-Type" = "application/json"
+        }
+        body = {
+          storage_account = azurerm_storage_account.datalake.name
+          storage_key     = azurerm_storage_account.datalake.primary_access_key
+          container       = "environmental-data"
+          silver_file     = "silver/cleaned_data.parquet"
+        }
+        authentication = {
+          type = "Anonymous"
+        }
+      }
+      dependsOn = [
+        {
+          activity = "SilverTransformActivity"
+          dependencyConditions = ["Succeeded"]
+        }
+      ]
+    }
+  ])
+}
